@@ -1,5 +1,7 @@
 # pcm
 
+[![Cargo Test](https://github.com/quietscroll/pcm/actions/workflows/cargo-test.yml/badge.svg)](https://github.com/quietscroll/pcm/actions/workflows/cargo-test.yml)
+
 L16 mono PCM newtype with duration, speed-change, and optional base64 serde.
 
 ## Overview
