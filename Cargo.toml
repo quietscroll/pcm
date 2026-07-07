@@ -1,0 +1,19 @@
+[package]
+name = "pcm"
+version = "0.1.0"
+edition = "2024"
+description = "L16 mono PCM newtype with duration, speed-change, and optional base64 serde"
+license = "MIT"
+keywords = ["pcm", "audio", "l16", "serde", "base64"]
+categories = ["multimedia::audio", "encoding"]
+repository = "https://github.com/quietscroll/pcm"
+readme = "README.md"
+
+[dependencies]
+thiserror = "2"
+time = { version = "0.3", default-features = false }
+serde = { version = "1", default-features = false, optional = true }
+base64 = { version = "0.22", optional = true }
+
+[features]
+serde = ["dep:serde", "dep:base64"]
