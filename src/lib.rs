@@ -134,10 +134,14 @@ impl PCM {
             let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
             let sample_rounded = sample_floats.round().cast::<i16>();
 
-            let out_arr = sample_rounded.to_array();
-            for val in out_arr {
-                out.extend_from_slice(&val.to_le_bytes());
+            let mut out_arr = sample_rounded.to_array();
+            if cfg!(target_endian = "big") {
+                for x in &mut out_arr {
+                    *x = x.swap_bytes();
+                }
             }
+            let bytes: [u8; 16] = unsafe { std::mem::transmute(out_arr) };
+            out.extend_from_slice(&bytes);
 
             i += lanes;
         }
@@ -204,10 +208,14 @@ impl PCM {
             let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
             let sample_rounded = sample_floats.round().cast::<i16>();
 
-            let out_arr = sample_rounded.to_array();
-            for val in out_arr {
-                out.extend_from_slice(&val.to_le_bytes());
+            let mut out_arr = sample_rounded.to_array();
+            if cfg!(target_endian = "big") {
+                for x in &mut out_arr {
+                    *x = x.swap_bytes();
+                }
             }
+            let bytes: [u8; 16] = unsafe { std::mem::transmute(out_arr) };
+            out.extend_from_slice(&bytes);
 
             i += lanes;
         }
@@ -248,6 +256,27 @@ impl PCM {
             out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
         out
+    }
+
+    /// Borrow the raw PCM byte buffer directly as aligned 16-bit little-endian samples if possible, avoiding copying.
+    ///
+    /// Returns `Some(&[i16])` if the data is aligned and the platform is little-endian.
+    /// Otherwise, returns `None`.
+    pub fn as_i16_samples(&self) -> Option<&[i16]> {
+        let bytes = &self.0;
+        if cfg!(target_endian = "little")
+            && bytes.len() % 2 == 0
+            && (bytes.as_ptr() as usize) % 2 == 0
+        {
+            unsafe {
+                Some(std::slice::from_raw_parts(
+                    bytes.as_ptr() as *const i16,
+                    bytes.len() / 2,
+                ))
+            }
+        } else {
+            None
+        }
     }
 }
 
