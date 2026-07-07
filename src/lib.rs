@@ -224,7 +224,8 @@ impl PCM {
         PCM::from(out)
     }
 
-    fn i16_samples(&self) -> Vec<i16> {
+    /// Convert the raw byte buffer into a vector of i16 samples.
+    pub fn i16_samples(&self) -> Vec<i16> {
         let bytes = &self.0;
         let n = bytes.len() / 2;
         let mut out = Vec::with_capacity(n);

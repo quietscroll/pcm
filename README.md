@@ -54,6 +54,7 @@ assert_eq!(pcm, back);
 | `PCM::slow_down(f)` | linear-interpolation upsampling (1.2 = 20 % slower) |
 | `PCM::to_b64()` | base64-encode the raw bytes (`serde` feature) |
 | `PCM::from_b64(s)` | decode a base64 string into a `PCM` buffer (`serde` feature) |
+| `PCM::i16_samples` | convert the raw byte buffer into a vector of i16 samples |
 
 ## License
 

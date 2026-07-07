@@ -20,6 +20,3 @@ serde_json = { version = "1" }
 
 [features]
 serde = ["dep:serde", "dep:base64", "serde/alloc"]
-
-
-
