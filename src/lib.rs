@@ -26,6 +26,7 @@
 //! | `serde` | [`PCM`] serialises as a base64 string; enables [`b64`] and [`b64_option`] helper modules |
 
 #![deny(missing_docs, unreachable_pub)]
+#![feature(portable_simd)]
 
 use std::ops::Deref;
 
@@ -106,9 +107,44 @@ impl PCM {
         let out_len = ((n as f32) / speed).ceil() as usize;
         let mut out = Vec::with_capacity(out_len * 2);
 
-        for i in 0..out_len {
-            let pos = i as f32 * speed;
-            let lo = pos.floor() as usize;
+        use std::simd::StdFloat;
+        use std::simd::prelude::*;
+
+        let mut i = 0;
+        let lanes = 8;
+        let n_minus_1 = Simd::<usize, 8>::splat(n - 1);
+        let offsets = Simd::<f32, 8>::from_array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        let speed_splat = Simd::<f32, 8>::splat(speed);
+        let ones = Simd::<f32, 8>::splat(1.0);
+
+        while i + lanes <= out_len {
+            let base = Simd::<f32, 8>::splat(i as f32);
+            let pos = (base + offsets) * speed_splat;
+            let lo_float = pos.floor();
+            let lo_idx = lo_float.cast::<usize>().simd_min(n_minus_1);
+            let hi_idx = (lo_idx + Simd::splat(1)).simd_min(n_minus_1);
+            let frac = pos - lo_float;
+
+            let samples_lo = Simd::<i16, 8>::gather_or(&samples, lo_idx, Simd::splat(0));
+            let samples_hi = Simd::<i16, 8>::gather_or(&samples, hi_idx, Simd::splat(0));
+
+            let samples_lo_f: Simd<f32, 8> = samples_lo.cast();
+            let samples_hi_f: Simd<f32, 8> = samples_hi.cast();
+
+            let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
+            let sample_rounded = sample_floats.round().cast::<i16>();
+
+            let out_arr = sample_rounded.to_array();
+            for val in out_arr {
+                out.extend_from_slice(&val.to_le_bytes());
+            }
+
+            i += lanes;
+        }
+
+        for idx in i..out_len {
+            let pos = idx as f32 * speed;
+            let lo = (pos.floor() as usize).min(n - 1);
             let hi = (lo + 1).min(n - 1);
             let frac = pos - lo as f32;
             let sample = samples[lo] as f32 * (1.0 - frac) + samples[hi] as f32 * frac;
@@ -141,8 +177,43 @@ impl PCM {
         let out_len = ((n as f32) * factor).ceil() as usize;
         let mut out = Vec::with_capacity(out_len * 2);
 
-        for i in 0..out_len {
-            let pos = i as f32 / factor;
+        use std::simd::StdFloat;
+        use std::simd::prelude::*;
+
+        let mut i = 0;
+        let lanes = 8;
+        let n_minus_1 = Simd::<usize, 8>::splat(n - 1);
+        let offsets = Simd::<f32, 8>::from_array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        let factor_splat = Simd::<f32, 8>::splat(factor);
+        let ones = Simd::<f32, 8>::splat(1.0);
+
+        while i + lanes <= out_len {
+            let base = Simd::<f32, 8>::splat(i as f32);
+            let pos = (base + offsets) / factor_splat;
+            let lo_float = pos.floor();
+            let lo_idx = lo_float.cast::<usize>().simd_min(n_minus_1);
+            let hi_idx = (lo_idx + Simd::splat(1)).simd_min(n_minus_1);
+            let frac = pos - lo_float;
+
+            let samples_lo = Simd::<i16, 8>::gather_or(&samples, lo_idx, Simd::splat(0));
+            let samples_hi = Simd::<i16, 8>::gather_or(&samples, hi_idx, Simd::splat(0));
+
+            let samples_lo_f: Simd<f32, 8> = samples_lo.cast();
+            let samples_hi_f: Simd<f32, 8> = samples_hi.cast();
+
+            let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
+            let sample_rounded = sample_floats.round().cast::<i16>();
+
+            let out_arr = sample_rounded.to_array();
+            for val in out_arr {
+                out.extend_from_slice(&val.to_le_bytes());
+            }
+
+            i += lanes;
+        }
+
+        for idx in i..out_len {
+            let pos = idx as f32 / factor;
             let lo = (pos.floor() as usize).min(n - 1);
             let hi = (lo + 1).min(n - 1);
             let frac = pos - lo as f32;
@@ -154,9 +225,28 @@ impl PCM {
     }
 
     fn i16_samples(&self) -> Vec<i16> {
-        self.chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]))
-            .collect()
+        let bytes = &self.0;
+        let n = bytes.len() / 2;
+        let mut out = Vec::with_capacity(n);
+        let mut i = 0;
+        let ptr = bytes.as_ptr() as *const i16;
+
+        while i + 16 <= n {
+            let mut val: [i16; 16] =
+                unsafe { std::ptr::read_unaligned(ptr.add(i) as *const [i16; 16]) };
+            if cfg!(target_endian = "big") {
+                for x in &mut val {
+                    *x = x.swap_bytes();
+                }
+            }
+            out.extend_from_slice(&val);
+            i += 16;
+        }
+
+        for chunk in bytes[i * 2..].chunks_exact(2) {
+            out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        out
     }
 }
 
@@ -404,6 +494,59 @@ mod tests {
             "round-trip length mismatch: original={original_len}, restored={}",
             restored.len()
         );
+    }
+
+    #[test]
+    fn test_simd_vs_scalar_equivalence() {
+        let pcm = sine_pcm(440.0, 0.2);
+
+        // Run speed_up
+        for speed in [0.5, 0.8, 1.0, 1.2, 1.4, 2.0, 3.5] {
+            let simd_out = pcm.speed_up(speed);
+
+            // Compute manually using scalar logic
+            let samples = pcm.i16_samples();
+            let n = samples.len();
+            let out_len = ((n as f32) / speed).ceil() as usize;
+            let mut expected_out = Vec::with_capacity(out_len * 2);
+            for i in 0..out_len {
+                let pos = i as f32 * speed;
+                let lo = (pos.floor() as usize).min(n - 1);
+                let hi = (lo + 1).min(n - 1);
+                let frac = pos - lo as f32;
+                let sample = samples[lo] as f32 * (1.0 - frac) + samples[hi] as f32 * frac;
+                expected_out.extend_from_slice(&(sample.round() as i16).to_le_bytes());
+            }
+            let scalar_out = PCM::from(expected_out);
+
+            assert_eq!(simd_out, scalar_out, "speed_up mismatch at speed {}", speed);
+        }
+
+        // Run slow_down
+        for factor in [0.5, 0.8, 1.0, 1.2, 1.4, 2.0, 3.5] {
+            let simd_out = pcm.slow_down(factor);
+
+            // Compute manually using scalar logic
+            let samples = pcm.i16_samples();
+            let n = samples.len();
+            let out_len = ((n as f32) * factor).ceil() as usize;
+            let mut expected_out = Vec::with_capacity(out_len * 2);
+            for i in 0..out_len {
+                let pos = i as f32 / factor;
+                let lo = (pos.floor() as usize).min(n - 1);
+                let hi = (lo + 1).min(n - 1);
+                let frac = pos - lo as f32;
+                let sample = samples[lo] as f32 * (1.0 - frac) + samples[hi] as f32 * frac;
+                expected_out.extend_from_slice(&(sample.round() as i16).to_le_bytes());
+            }
+            let scalar_out = PCM::from(expected_out);
+
+            assert_eq!(
+                simd_out, scalar_out,
+                "slow_down mismatch at factor {}",
+                factor
+            );
+        }
     }
 
     #[test]

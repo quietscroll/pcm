@@ -19,4 +19,7 @@ base64 = { version = "0.22", optional = true }
 serde_json = { version = "1" }
 
 [features]
-serde = ["dep:serde", "dep:base64"]
+serde = ["dep:serde", "dep:base64", "serde/alloc"]
+
+
+
