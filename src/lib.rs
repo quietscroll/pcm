@@ -405,4 +405,13 @@ mod tests {
             restored.len()
         );
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_pcm_serde() {
+        let pcm = sine_pcm(440.0, 0.1);
+        let serialized = serde_json::to_string(&pcm).unwrap();
+        let deserialized: PCM = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(pcm, deserialized);
+    }
 }

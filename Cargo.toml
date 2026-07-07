@@ -15,5 +15,8 @@ time = { version = "0.3", default-features = false }
 serde = { version = "1", default-features = false, optional = true }
 base64 = { version = "0.22", optional = true }
 
+[dev-dependencies]
+serde_json = { version = "1" }
+
 [features]
 serde = ["dep:serde", "dep:base64"]
