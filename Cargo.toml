@@ -16,7 +16,12 @@ serde = { version = "1", default-features = false, optional = true }
 base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
+criterion = "0.8.2"
 serde_json = { version = "1" }
 
 [features]
 serde = ["dep:serde", "dep:base64", "serde/alloc"]
+
+[[bench]]
+name = "pcm"
+harness = false
