@@ -107,6 +107,7 @@ impl PCM {
 
         let out_len = ((n as f32) / speed).ceil() as usize;
         let mut out = Vec::with_capacity(out_len * 2);
+        let out_ptr = out.as_mut_ptr();
 
         use std::simd::StdFloat;
         use std::simd::prelude::*;
@@ -135,14 +136,7 @@ impl PCM {
             let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
             let sample_rounded = sample_floats.round().cast::<i16>();
 
-            let mut out_arr = sample_rounded.to_array();
-            if cfg!(target_endian = "big") {
-                for x in &mut out_arr {
-                    *x = x.swap_bytes();
-                }
-            }
-            let bytes: [u8; 16] = unsafe { std::mem::transmute(out_arr) };
-            out.extend_from_slice(&bytes);
+            write_i16x8_le(out_ptr, i, sample_rounded.to_array());
 
             i += lanes;
         }
@@ -153,7 +147,11 @@ impl PCM {
             let hi = (lo + 1).min(n - 1);
             let frac = pos - lo as f32;
             let sample = samples[lo] as f32 * (1.0 - frac) + samples[hi] as f32 * frac;
-            out.extend_from_slice(&(sample.round() as i16).to_le_bytes());
+            write_i16_le(out_ptr, idx, sample.round() as i16);
+        }
+
+        unsafe {
+            out.set_len(out_len * 2);
         }
 
         PCM::from(out)
@@ -182,6 +180,7 @@ impl PCM {
 
         let out_len = ((n as f32) * factor).ceil() as usize;
         let mut out = Vec::with_capacity(out_len * 2);
+        let out_ptr = out.as_mut_ptr();
 
         use std::simd::StdFloat;
         use std::simd::prelude::*;
@@ -210,14 +209,7 @@ impl PCM {
             let sample_floats = samples_lo_f * (ones - frac) + samples_hi_f * frac;
             let sample_rounded = sample_floats.round().cast::<i16>();
 
-            let mut out_arr = sample_rounded.to_array();
-            if cfg!(target_endian = "big") {
-                for x in &mut out_arr {
-                    *x = x.swap_bytes();
-                }
-            }
-            let bytes: [u8; 16] = unsafe { std::mem::transmute(out_arr) };
-            out.extend_from_slice(&bytes);
+            write_i16x8_le(out_ptr, i, sample_rounded.to_array());
 
             i += lanes;
         }
@@ -228,7 +220,11 @@ impl PCM {
             let hi = (lo + 1).min(n - 1);
             let frac = pos - lo as f32;
             let sample = samples[lo] as f32 * (1.0 - frac) + samples[hi] as f32 * frac;
-            out.extend_from_slice(&(sample.round() as i16).to_le_bytes());
+            write_i16_le(out_ptr, idx, sample.round() as i16);
+        }
+
+        unsafe {
+            out.set_len(out_len * 2);
         }
 
         PCM::from(out)
@@ -299,6 +295,26 @@ impl I16SampleView<'_> {
             Self::Borrowed(samples) => samples,
             Self::Owned(samples) => samples,
         }
+    }
+}
+
+fn write_i16x8_le(out_ptr: *mut u8, sample_offset: usize, mut samples: [i16; 8]) {
+    if cfg!(target_endian = "big") {
+        for sample in &mut samples {
+            *sample = sample.swap_bytes();
+        }
+    }
+
+    let bytes: [u8; 16] = unsafe { std::mem::transmute(samples) };
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr.add(sample_offset * 2), bytes.len());
+    }
+}
+
+fn write_i16_le(out_ptr: *mut u8, sample_offset: usize, sample: i16) {
+    let bytes = sample.to_le_bytes();
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr.add(sample_offset * 2), bytes.len());
     }
 }
 
