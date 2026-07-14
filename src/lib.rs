@@ -234,6 +234,16 @@ impl PCM {
     pub fn i16_samples(&self) -> Vec<i16> {
         let bytes = &self.0;
         let n = bytes.len() / 2;
+
+        if cfg!(target_endian = "little") {
+            let mut out = Vec::<i16>::with_capacity(n);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.as_mut_ptr().cast::<u8>(), n * 2);
+                out.set_len(n);
+            }
+            return out;
+        }
+
         let mut out = Vec::with_capacity(n);
         let mut i = 0;
         let ptr = bytes.as_ptr() as *const i16;
@@ -282,6 +292,14 @@ impl PCM {
             .map(I16SampleView::Borrowed)
             .unwrap_or_else(|| I16SampleView::Owned(self.i16_samples()))
     }
+
+    /// Exposes the internal sample view path for Criterion benchmarks only.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn bench_i16_sample_view_len(&self) -> usize {
+        let samples = self.i16_sample_view();
+        std::hint::black_box(samples.as_slice()).len()
+    }
 }
 
 enum I16SampleView<'a> {
@@ -305,17 +323,33 @@ fn write_i16x8_le(out_ptr: *mut u8, sample_offset: usize, mut samples: [i16; 8])
         }
     }
 
-    let bytes: [u8; 16] = unsafe { std::mem::transmute(samples) };
     unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr.add(sample_offset * 2), bytes.len());
+        std::ptr::write_unaligned(out_ptr.add(sample_offset * 2).cast::<[i16; 8]>(), samples);
     }
 }
 
 fn write_i16_le(out_ptr: *mut u8, sample_offset: usize, sample: i16) {
-    let bytes = sample.to_le_bytes();
     unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr.add(sample_offset * 2), bytes.len());
+        if cfg!(target_endian = "little") {
+            std::ptr::write_unaligned(out_ptr.add(sample_offset * 2).cast::<i16>(), sample);
+        } else {
+            let bytes = sample.to_le_bytes();
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                out_ptr.add(sample_offset * 2),
+                bytes.len(),
+            );
+        }
     }
+}
+
+/// Exposes the internal 8-sample write path for Criterion benchmarks only.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn bench_write_i16x8_le(samples: [i16; 8]) -> [u8; 16] {
+    let mut out = [0_u8; 16];
+    write_i16x8_le(out.as_mut_ptr(), 0, samples);
+    out
 }
 
 #[cfg(feature = "serde")]

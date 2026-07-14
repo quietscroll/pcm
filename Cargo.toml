@@ -20,8 +20,14 @@ criterion = "0.8.2"
 serde_json = { version = "1" }
 
 [features]
+bench-internals = []
 serde = ["dep:serde", "dep:base64", "serde/alloc"]
 
 [[bench]]
 name = "pcm"
 harness = false
+
+[[bench]]
+name = "internals"
+harness = false
+required-features = ["bench-internals"]
