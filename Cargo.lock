@@ -328,6 +328,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
+ "wsola",
 ]
 
 [[package]]
@@ -681,6 +682,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "wsola"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "542a5d4e1f44b1af2eeef27a918d15d117ce326af641153efbfe436b586418f5"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]
