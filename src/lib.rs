@@ -98,7 +98,8 @@ impl PCM {
             return self.clone();
         }
 
-        let samples = self.i16_samples();
+        let samples = self.i16_sample_view();
+        let samples = samples.as_slice();
         let n = samples.len();
         if n == 0 {
             return PCM::default();
@@ -172,7 +173,8 @@ impl PCM {
             return self.clone();
         }
 
-        let samples = self.i16_samples();
+        let samples = self.i16_sample_view();
+        let samples = samples.as_slice();
         let n = samples.len();
         if n == 0 {
             return PCM::default();
@@ -276,6 +278,26 @@ impl PCM {
             }
         } else {
             None
+        }
+    }
+
+    fn i16_sample_view(&self) -> I16SampleView<'_> {
+        self.as_i16_samples()
+            .map(I16SampleView::Borrowed)
+            .unwrap_or_else(|| I16SampleView::Owned(self.i16_samples()))
+    }
+}
+
+enum I16SampleView<'a> {
+    Borrowed(&'a [i16]),
+    Owned(Vec<i16>),
+}
+
+impl I16SampleView<'_> {
+    fn as_slice(&self) -> &[i16] {
+        match self {
+            Self::Borrowed(samples) => samples,
+            Self::Owned(samples) => samples,
         }
     }
 }
