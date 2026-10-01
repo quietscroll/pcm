@@ -103,13 +103,16 @@ impl PCM {
             return PCM::default();
         }
 
-        let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32768.0).collect();
+        let samples_f32: Vec<f32> = samples
+            .iter()
+            .map(|&s| s as f32 / i16::MAX as f32)
+            .collect();
         let out_f32 = wsola::stretch(&samples_f32, PCM_SAMPLE_RATE_HZ as u32, 1, speed)
             .expect("wsola stretch failed");
 
         let mut out = Vec::with_capacity(out_f32.len() * 2);
         for s in out_f32 {
-            let sample_i16 = (s * 32768.0)
+            let sample_i16 = (s * i16::MAX as f32)
                 .clamp(i16::MIN as f32, i16::MAX as f32)
                 .round() as i16;
             out.extend_from_slice(&sample_i16.to_le_bytes());
@@ -139,13 +142,16 @@ impl PCM {
             return PCM::default();
         }
 
-        let samples_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32768.0).collect();
+        let samples_f32: Vec<f32> = samples
+            .iter()
+            .map(|&s| s as f32 / i16::MAX as f32)
+            .collect();
         let out_f32 = wsola::stretch(&samples_f32, PCM_SAMPLE_RATE_HZ as u32, 1, 1.0 / factor)
             .expect("wsola stretch failed");
 
         let mut out = Vec::with_capacity(out_f32.len() * 2);
         for s in out_f32 {
-            let sample_i16 = (s * 32768.0)
+            let sample_i16 = (s * i16::MAX as f32)
                 .clamp(i16::MIN as f32, i16::MAX as f32)
                 .round() as i16;
             out.extend_from_slice(&sample_i16.to_le_bytes());
@@ -462,6 +468,51 @@ mod tests {
             faster.iter().all(|&b| b == 0),
             "silence introduced non-zero bytes"
         );
+    }
+
+    fn tone_starting_mid_wave() -> PCM {
+        // Starts and ends at non-zero amplitude: a naive cut at either edge clicks.
+        let bytes: Vec<u8> = (0..PCM_SAMPLE_RATE_HZ as usize)
+            .map(|i| {
+                let t = i as f32 / PCM_SAMPLE_RATE_HZ as f32;
+                let s = 0.5 * (2.0 * std::f32::consts::PI * 220.0 * t + 1.0).sin();
+                (s * i16::MAX as f32).round() as i16
+            })
+            .flat_map(i16::to_le_bytes)
+            .collect();
+        PCM::from(bytes)
+    }
+
+    fn max_step(samples: &[i16]) -> i32 {
+        samples
+            .windows(2)
+            .map(|w| (w[1] as i32 - w[0] as i32).abs())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Stretched ads/interjections are spliced next to other audio, so the
+    /// stretch must neither start/end on a step nor add splice discontinuities
+    /// steeper than the source already has — either would be an audible click.
+    #[test]
+    fn stretch_keeps_transitions_smooth() {
+        let input = tone_starting_mid_wave();
+        let input_step = max_step(&input.i16_samples());
+        for out in [
+            input.speed_up(1.1),
+            input.speed_up(1.4),
+            input.slow_down(1.2),
+        ] {
+            let out = out.i16_samples();
+            assert!(out[0].abs() < 64, "head starts on a step: {}", out[0]);
+            let last = out[out.len() - 1];
+            assert!(last.abs() < 64, "tail ends on a step: {last}");
+            let step = max_step(&out);
+            assert!(
+                step <= input_step + 64,
+                "stretch added a discontinuity: {step} > source {input_step}"
+            );
+        }
     }
 
     #[test]
